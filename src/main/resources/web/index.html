@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windows 11 Debloater</title>
+    <!-- All resources are local — no CDNs, no external URLs, no remote fonts -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Warning banner shown when not running as admin -->
+<div id="adminWarning" class="warning-banner">
+    <span>Not running as Administrator. Execution is blocked. You can still preview scripts and edit profiles.</span>
+    <button class="btn btn-danger" onclick="restartAsAdmin()">Restart as Admin</button>
+</div>
+
+<div class="app-container">
+    <!-- Sidebar: Category navigation + search -->
+    <aside class="sidebar">
+        <div class="sidebar-search">
+            <input type="text" id="searchInput" placeholder="Search actions..." oninput="handleSearch(this.value)">
+        </div>
+        <nav class="sidebar-nav" id="sidebarNav">
+            <!-- Populated by JS from Java ActionRegistry -->
+        </nav>
+    </aside>
+
+    <!-- Main content area -->
+    <main class="main-content">
+        <!-- Top bar: title, admin badge, quick actions -->
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <span class="app-title">Windows 11 Debloater</span>
+                <span id="adminBadge" class="admin-badge admin-no">Not Admin</span>
+            </div>
+            <div class="top-bar-actions">
+                <button class="btn" onclick="selectRecommended()">Recommended</button>
+                <button class="btn" onclick="selectAll()">All</button>
+                <button class="btn" onclick="selectNone()">None</button>
+                <button class="btn" onclick="importProfile()">Import</button>
+                <button class="btn" onclick="exportProfile()">Export</button>
+            </div>
+        </div>
+
+        <!-- Content: Action cards grouped by category -->
+        <div class="content-area" id="contentArea">
+            <!-- Populated by JS -->
+        </div>
+
+        <!-- Log panel (shown during/after execution) -->
+        <div id="logPanel" class="log-panel">
+            <div class="log-panel-header">
+                <span>Execution Log</span>
+                <button class="modal-close" onclick="toggleLogPanel()">&times;</button>
+            </div>
+            <div class="log-panel-content" id="logContent"></div>
+        </div>
+
+        <!-- Bottom bar: action buttons -->
+        <div class="bottom-bar">
+            <div class="bottom-bar-left">
+                <span class="selection-count" id="selectionCount">0 selected</span>
+                <button class="btn" onclick="previewScript()">Preview PS</button>
+                <button class="btn btn-primary" id="btnRun" onclick="runSelected()">Run Selected</button>
+            </div>
+            <div class="bottom-bar-right">
+                <button class="btn" id="btnToggleLog" onclick="toggleLogPanel()">Toggle Log</button>
+                <button class="btn" id="btnSaveLog" onclick="saveLog()" disabled>Save Log</button>
+                <button class="btn" id="btnExportJson" onclick="exportReportJson()" disabled>Report JSON</button>
+                <button class="btn" id="btnSaveTxt" onclick="saveReportTxt()" disabled>Report TXT</button>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- Preview Modal -->
+<div id="previewModal" class="modal-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>PowerShell Preview</h2>
+            <button class="modal-close" onclick="closeModal('previewModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="preview-content" id="previewContent"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="copyPreview()">Copy to Clipboard</button>
+            <button class="btn" onclick="closeModal('previewModal')">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Admin Required Modal -->
+<div id="adminRequiredModal" class="modal-overlay">
+    <div class="modal" style="max-width: 500px;">
+        <div class="modal-header">
+            <h2>Administrator Required</h2>
+            <button class="modal-close" onclick="closeModal('adminRequiredModal')">&times;</button>
+        </div>
+        <div class="modal-body" style="text-align:center;padding:30px 20px;">
+            <div style="font-size:48px;margin-bottom:16px;">&#128274;</div>
+            <p style="font-size:15px;margin-bottom:8px;color:var(--text-primary);">
+                This app must run as <strong>Administrator</strong> to execute debloat actions.
+            </p>
+            <p style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;">
+                You can still browse actions, toggle selections, preview the PowerShell script, and import/export profiles without admin.
+            </p>
+            <button class="btn btn-primary" onclick="restartAsAdmin()" style="font-size:14px;padding:10px 24px;">
+                Restart as Administrator
+            </button>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('adminRequiredModal')">Stay Without Admin</button>
+        </div>
+    </div>
+</div>
+
+<!-- Confirm Execution Modal -->
+<div id="confirmModal" class="modal-overlay">
+    <div class="modal" style="max-width: 600px;">
+        <div class="modal-header">
+            <h2>Confirm Execution</h2>
+            <button class="modal-close" onclick="closeModal('confirmModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="confirmMessage"></p>
+            <div id="aggressiveWarning" class="hidden" style="margin-top:12px;padding:10px;background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);border-radius:4px;color:#ff4757;font-size:13px;">
+                <strong>Warning:</strong> The following aggressive actions are selected:
+                <div id="aggressiveList" class="confirm-actions-list"></div>
+            </div>
+            <div style="margin-top:12px;font-size:12px;color:#8892b0;">
+                A system restore point will be created first if you have that action enabled.
+                Review the PowerShell preview before running if you want to see exactly what will be executed.
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('confirmModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="confirmRun()">Run Now</button>
+        </div>
+    </div>
+</div>
+
+<!-- Report Modal -->
+<div id="reportModal" class="modal-overlay">
+    <div class="modal" style="max-width:1000px;">
+        <div class="modal-header">
+            <h2>Execution Report</h2>
+            <button class="modal-close" onclick="closeModal('reportModal')">&times;</button>
+        </div>
+        <div class="modal-body" id="reportBody">
+            <!-- Populated after execution -->
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="exportReportJson()">Export JSON</button>
+            <button class="btn" onclick="saveReportTxt()">Export TXT</button>
+            <button class="btn" onclick="closeModal('reportModal')">Close</button>
+        </div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
