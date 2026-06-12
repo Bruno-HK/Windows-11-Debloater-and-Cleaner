@@ -10,7 +10,7 @@ Selective Windows 11 debloater with a JavaFX + WebView UI, PowerShell preview, p
 
 Implementation-driven project documentation is available in [docs/APP_DOCUMENTATION.md](docs/APP_DOCUMENTATION.md).
 
-This application wraps the `win11_debloat.ps1` script into a desktop tool that lets you choose exactly what gets removed, disabled, or left alone. It does not blindly run the full script — it maps every operation into individual selectable actions and generates a new temporary PowerShell script based only on your selections.
+This application wraps the `win11_debloat.ps1` script into a desktop tool that lets you choose exactly what gets removed, disabled, or left alone. It does not blindly run the full script, it maps every operation into individual selectable actions and generates a new temporary PowerShell script based only on your selections.
 
 ## Safety Warning
 
