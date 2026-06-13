@@ -27,7 +27,7 @@ This application wraps the `win11_debloat.ps1` script into a desktop tool that l
 2. Unzip the archive.
 3. Right-click **Win11Debloater.exe** and select **Run as administrator**.
 
-That's it — no Java installation needed. The release includes a bundled JRE.
+That's it, no Java installation needed. The release includes a bundled JRE.
 
 **Note:** This application was tested on a Windows 11 VM that was upgraded from Windows 10 (not a clean install). If you are running a clean Windows 11 installation, deselect the **Windows Cleanup** category — those actions target upgrade leftovers that won't exist on a fresh install.
 
