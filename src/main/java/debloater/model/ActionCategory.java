@@ -14,7 +14,8 @@ public enum ActionCategory {
     ADS_SPONSORED("Ads & Sponsored Content", 6),
     PRIVACY_TELEMETRY("Privacy & Telemetry", 7),
     SERVICES("Services", 8),
-    SCHEDULED_TASKS("Scheduled Tasks", 9);
+    SCHEDULED_TASKS("Scheduled Tasks", 9),
+    WINDOWS_CLEANUP("Windows Cleanup", 10);
 
     private final String label;
     private final int order;

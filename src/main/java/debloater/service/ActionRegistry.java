@@ -34,6 +34,7 @@ public class ActionRegistry {
         registerPrivacyTelemetryActions();
         registerServiceActions();
         registerScheduledTaskActions();
+        registerWindowsCleanupActions();
     }
 
     /**
@@ -1029,5 +1030,741 @@ public class ActionRegistry {
                 Fail-ActionResult -result $result -message "Failed to remove registry key." -error $_.Exception.Message
             }
             """, id, title, category, riskLevel, regPath, regPath, regPath, regPath);
+    }
+
+    // ========================================================================
+    //  WINDOWS CLEANUP
+    //  For users who upgraded from Windows 10 to Windows 11 and want to
+    //  remove old upgrade leftovers and reduce residual files safely.
+    //  NOTE: This does NOT make an upgraded system identical to a fresh install.
+    //  A real fresh install is still different.
+    //  NOTE: The "Create System Restore Point" action in the Safety category
+    //  is recommended ON by default and should be enabled before running
+    //  Windows Cleanup actions.
+    // ========================================================================
+
+    private void registerWindowsCleanupActions() {
+        // --- Safe actions (recommended ON by default) ---
+
+        registerAction(new DebloatAction(
+            "cleanup_windows_temp",
+            "Remove Windows Temporary Files",
+            "Clears safe system temp locations (C:\\Windows\\Temp). Skips locked files. Does not touch user documents or personal folders.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.SAFE,
+            true, false, true,
+            List.of("cleanup", "temp", "temporary", "windows", "cache"),
+            buildCleanupWindowsTempBlock(),
+            false
+        ));
+
+        registerAction(new DebloatAction(
+            "cleanup_user_temp",
+            "Remove Current User Temp Files",
+            "Clears the current user's temp folder ($env:TEMP). Skips locked files. Reports removed and skipped counts.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.SAFE,
+            true, false, true,
+            List.of("cleanup", "temp", "user", "cache"),
+            buildCleanupUserTempBlock(),
+            false
+        ));
+
+        registerAction(new DebloatAction(
+            "cleanup_wu_cache",
+            "Remove Windows Update Download Cache",
+            "Stops Windows Update services, clears SoftwareDistribution\\Download, then restarts services. Only clears the Download subfolder, not the entire SoftwareDistribution folder.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.SAFE,
+            true, false, true,
+            List.of("cleanup", "windows update", "cache", "download", "softwaredistribution"),
+            buildCleanupWuCacheBlock(),
+            false
+        ));
+
+        registerAction(new DebloatAction(
+            "cleanup_do_cache",
+            "Remove Delivery Optimization Cache",
+            "Clears the Delivery Optimization cache used for peer-to-peer Windows Update distribution. Skips if the cache does not exist.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.SAFE,
+            true, false, true,
+            List.of("cleanup", "delivery optimization", "cache", "peer"),
+            buildCleanupDoCacheBlock(),
+            false
+        ));
+
+        registerAction(new DebloatAction(
+            "cleanup_upgrade_temp",
+            "Remove Windows Upgrade Temporary Files",
+            "Removes upgrade temp leftovers ($env:SystemDrive\\$Windows.~BT, $Windows.~WS). Checks that Windows setup is not currently running before removing.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.SAFE,
+            true, false, true,
+            List.of("cleanup", "upgrade", "temp", "windows.bt", "windows.ws"),
+            buildCleanupUpgradeTempBlock(),
+            false
+        ));
+
+        registerAction(new DebloatAction(
+            "cleanup_setup_logs",
+            "Remove Setup Logs Older Than 30 Days",
+            "Removes Windows setup/update log files older than 30 days from C:\\Windows\\Logs. Skips recent logs. Reports skipped if none found.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.SAFE,
+            true, false, true,
+            List.of("cleanup", "logs", "setup", "update", "old"),
+            buildCleanupSetupLogsBlock(),
+            false
+        ));
+
+        // --- Moderate actions (OFF by default) ---
+
+        registerAction(new DebloatAction(
+            "cleanup_dism_startcomponentcleanup",
+            "Run DISM StartComponentCleanup",
+            "Runs DISM.exe /Online /Cleanup-Image /StartComponentCleanup to clean up superseded components. A restart may be recommended after completion.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.MODERATE,
+            false, true, true,
+            List.of("cleanup", "dism", "component", "winsxs"),
+            buildDismStartComponentCleanupBlock(),
+            false
+        ));
+
+        // --- Aggressive actions (OFF by default) ---
+
+        registerAction(new DebloatAction(
+            "cleanup_dism_resetbase",
+            "Run DISM StartComponentCleanup with ResetBase",
+            "Runs DISM.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase. WARNING: This removes superseded component versions. Installed Windows updates may no longer be uninstallable after this.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.AGGRESSIVE,
+            false, true, true,
+            List.of("cleanup", "dism", "resetbase", "component", "winsxs"),
+            buildDismResetBaseBlock(),
+            false
+        ));
+
+        registerAction(new DebloatAction(
+            "cleanup_empty_recycle_bin",
+            "Empty Recycle Bin",
+            "Permanently removes all items from the Recycle Bin. WARNING: This permanently removes items from the Recycle Bin. They cannot be recovered.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.AGGRESSIVE,
+            false, false, true,
+            List.of("cleanup", "recycle bin", "trash", "empty"),
+            buildEmptyRecycleBinBlock(),
+            false
+        ));
+
+        registerAction(new DebloatAction(
+            "cleanup_previous_windows",
+            "Remove Previous Windows Installation Files",
+            "Removes Windows.old and previous Windows installation leftovers using the Windows built-in Disk Cleanup mechanism. WARNING: Removing previous Windows installation files means you may not be able to roll back to the previous Windows version.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.AGGRESSIVE,
+            false, false, true,
+            List.of("cleanup", "windows.old", "previous", "upgrade", "rollback"),
+            buildCleanupPreviousWindowsBlock(),
+            false
+        ));
+
+        // --- Optional but useful (OFF by default) ---
+
+        registerAction(new DebloatAction(
+            "cleanup_crash_dumps",
+            "Clear Old Crash Dump Files",
+            "Removes system crash dump files from C:\\Windows\\Minidump and the main memory dump. Does not delete dumps currently in use.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.MODERATE,
+            false, false, true,
+            List.of("cleanup", "crash", "dump", "minidump", "memory"),
+            buildCleanupCrashDumpsBlock(),
+            false
+        ));
+
+        registerAction(new DebloatAction(
+            "cleanup_thumbnail_cache",
+            "Clear Thumbnail Cache",
+            "Clears the Windows Explorer thumbnail cache. Thumbnails will be regenerated by Windows as needed.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.SAFE,
+            false, false, true,
+            List.of("cleanup", "thumbnail", "cache", "explorer", "thumbcache"),
+            buildCleanupThumbnailCacheBlock(),
+            false
+        ));
+
+        registerAction(new DebloatAction(
+            "cleanup_shader_cache",
+            "Clear DirectX Shader Cache",
+            "Clears the DirectX shader cache. Shaders will be regenerated by applications as needed. May briefly increase load times for games/apps on first launch.",
+            ActionCategory.WINDOWS_CLEANUP, RiskLevel.SAFE,
+            false, false, true,
+            List.of("cleanup", "shader", "directx", "dx", "cache", "gpu"),
+            buildCleanupShaderCacheBlock(),
+            false
+        ));
+    }
+
+    // --- Windows Cleanup PowerShell block builders ---
+
+    private String buildCleanupWindowsTempBlock() {
+        return """
+            $actionId = "cleanup_windows_temp"
+            $result = New-ActionResult -id $actionId -title "Remove Windows Temporary Files" -category "Windows Cleanup" -riskLevel "Safe"
+            try {
+                $tempPath = "$env:SystemRoot\\Temp"
+                if (!(Test-Path $tempPath)) {
+                    Skip-ActionResult -result $result -message "Windows temp folder not found." -details "Path does not exist: $tempPath"
+                } else {
+                    $items = Get-ChildItem -Path $tempPath -Recurse -Force -ErrorAction SilentlyContinue
+                    if ($items.Count -eq 0) {
+                        AlreadyApplied-ActionResult -result $result -message "Windows temp folder is already empty." -details "No files found in $tempPath."
+                    } else {
+                        $removed = 0
+                        $skipped = 0
+                        $sizeRemoved = 0
+                        foreach ($item in $items) {
+                            try {
+                                $itemSize = 0
+                                if (!$item.PSIsContainer) { $itemSize = $item.Length }
+                                Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
+                                $removed++
+                                $sizeRemoved += $itemSize
+                            } catch {
+                                $skipped++
+                            }
+                        }
+                        $sizeMB = [math]::Round($sizeRemoved / 1MB, 1)
+                        if ($removed -eq 0) {
+                            Partial-ActionResult -result $result -message "Could not remove any files (all locked)." -details "Skipped $skipped locked files in $tempPath."
+                        } elseif ($skipped -gt 0) {
+                            Partial-ActionResult -result $result -message "Removed $removed items ($sizeMB MB). Skipped $skipped locked files." -details "Cleaned $tempPath. Some files were in use."
+                        } else {
+                            Complete-ActionResult -result $result -message "Removed $removed items ($sizeMB MB)." -details "Cleaned $tempPath completely."
+                        }
+                    }
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to clean Windows temp files." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildCleanupUserTempBlock() {
+        return """
+            $actionId = "cleanup_user_temp"
+            $result = New-ActionResult -id $actionId -title "Remove Current User Temp Files" -category "Windows Cleanup" -riskLevel "Safe"
+            try {
+                $tempPath = $env:TEMP
+                if (!(Test-Path $tempPath)) {
+                    Skip-ActionResult -result $result -message "User temp folder not found." -details "Path does not exist: $tempPath"
+                } else {
+                    $items = Get-ChildItem -Path $tempPath -Recurse -Force -ErrorAction SilentlyContinue
+                    if ($items.Count -eq 0) {
+                        AlreadyApplied-ActionResult -result $result -message "User temp folder is already empty." -details "No files found in $tempPath."
+                    } else {
+                        $removed = 0
+                        $skipped = 0
+                        $sizeRemoved = 0
+                        foreach ($item in $items) {
+                            try {
+                                $itemSize = 0
+                                if (!$item.PSIsContainer) { $itemSize = $item.Length }
+                                Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
+                                $removed++
+                                $sizeRemoved += $itemSize
+                            } catch {
+                                $skipped++
+                            }
+                        }
+                        $sizeMB = [math]::Round($sizeRemoved / 1MB, 1)
+                        if ($removed -eq 0) {
+                            Partial-ActionResult -result $result -message "Could not remove any files (all locked)." -details "Skipped $skipped locked files in $tempPath."
+                        } elseif ($skipped -gt 0) {
+                            Partial-ActionResult -result $result -message "Removed $removed items ($sizeMB MB). Skipped $skipped locked files." -details "Cleaned $tempPath. Some files were in use."
+                        } else {
+                            Complete-ActionResult -result $result -message "Removed $removed items ($sizeMB MB)." -details "Cleaned $tempPath completely."
+                        }
+                    }
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to clean user temp files." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildCleanupWuCacheBlock() {
+        return """
+            $actionId = "cleanup_wu_cache"
+            $result = New-ActionResult -id $actionId -title "Remove Windows Update Download Cache" -category "Windows Cleanup" -riskLevel "Safe"
+            try {
+                $downloadPath = "$env:SystemRoot\\SoftwareDistribution\\Download"
+                if (!(Test-Path $downloadPath)) {
+                    Skip-ActionResult -result $result -message "Windows Update download cache not found." -details "Path does not exist: $downloadPath"
+                } else {
+                    $items = Get-ChildItem -Path $downloadPath -Recurse -Force -ErrorAction SilentlyContinue
+                    if ($items.Count -eq 0) {
+                        AlreadyApplied-ActionResult -result $result -message "Windows Update download cache is already empty." -details "No files in $downloadPath."
+                    } else {
+                        # Track previous service states
+                        $servicesToStop = @("wuauserv", "bits", "dosvc")
+                        $previousStates = @{}
+                        foreach ($svcName in $servicesToStop) {
+                            $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+                            if ($svc) {
+                                $previousStates[$svcName] = $svc.Status
+                            }
+                        }
+
+                        # Stop services that are running
+                        $stopFailed = $false
+                        foreach ($svcName in $servicesToStop) {
+                            $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+                            if ($svc -and $svc.Status -eq 'Running') {
+                                try {
+                                    Stop-Service -Name $svcName -Force -ErrorAction Stop
+                                } catch {
+                                    $stopFailed = $true
+                                }
+                            }
+                        }
+
+                        if ($stopFailed) {
+                            # Try to restart services that were running before
+                            foreach ($svcName in $servicesToStop) {
+                                if ($previousStates.ContainsKey($svcName) -and $previousStates[$svcName] -eq 'Running') {
+                                    Start-Service -Name $svcName -ErrorAction SilentlyContinue
+                                }
+                            }
+                            Fail-ActionResult -result $result -message "Could not stop Windows Update services." -error "One or more services could not be stopped. Cache was not cleared."
+                        } else {
+                            Start-Sleep -Seconds 2
+                            $removed = 0
+                            $skipped = 0
+                            $sizeRemoved = 0
+                            $dlItems = Get-ChildItem -Path $downloadPath -Recurse -Force -ErrorAction SilentlyContinue
+                            foreach ($item in $dlItems) {
+                                try {
+                                    $itemSize = 0
+                                    if (!$item.PSIsContainer) { $itemSize = $item.Length }
+                                    Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
+                                    $removed++
+                                    $sizeRemoved += $itemSize
+                                } catch {
+                                    $skipped++
+                                }
+                            }
+                            $sizeMB = [math]::Round($sizeRemoved / 1MB, 1)
+
+                            # Restart services that were previously running
+                            $restartDetails = @()
+                            foreach ($svcName in $servicesToStop) {
+                                if ($previousStates.ContainsKey($svcName) -and $previousStates[$svcName] -eq 'Running') {
+                                    try {
+                                        Start-Service -Name $svcName -ErrorAction Stop
+                                        $restartDetails += "$svcName restarted"
+                                    } catch {
+                                        $restartDetails += "$svcName failed to restart"
+                                    }
+                                }
+                            }
+                            $restartInfo = ($restartDetails -join "; ")
+
+                            if ($removed -eq 0 -and $skipped -gt 0) {
+                                Partial-ActionResult -result $result -message "Could not remove any cached files." -details "Skipped $skipped locked files. Services: $restartInfo."
+                            } elseif ($skipped -gt 0) {
+                                Partial-ActionResult -result $result -message "Removed $removed items ($sizeMB MB). Skipped $skipped locked files." -details "Cleaned $downloadPath. $restartInfo."
+                            } else {
+                                Complete-ActionResult -result $result -message "Removed $removed items ($sizeMB MB)." -details "Cleaned $downloadPath. $restartInfo."
+                            }
+                        }
+                    }
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to clean Windows Update cache." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildCleanupDoCacheBlock() {
+        return """
+            $actionId = "cleanup_do_cache"
+            $result = New-ActionResult -id $actionId -title "Remove Delivery Optimization Cache" -category "Windows Cleanup" -riskLevel "Safe"
+            try {
+                $doPath = "$env:SystemRoot\\ServiceProfiles\\NetworkService\\AppData\\Local\\Microsoft\\Windows\\DeliveryOptimization\\Cache"
+                if (!(Test-Path $doPath)) {
+                    Skip-ActionResult -result $result -message "Delivery Optimization cache not found." -details "Path does not exist: $doPath. Cache may already be empty or Delivery Optimization is not used."
+                } else {
+                    $items = Get-ChildItem -Path $doPath -Recurse -Force -ErrorAction SilentlyContinue
+                    if ($items.Count -eq 0) {
+                        AlreadyApplied-ActionResult -result $result -message "Delivery Optimization cache is already empty." -details "No files in $doPath."
+                    } else {
+                        $removed = 0
+                        $skipped = 0
+                        $sizeRemoved = 0
+                        foreach ($item in $items) {
+                            try {
+                                $itemSize = 0
+                                if (!$item.PSIsContainer) { $itemSize = $item.Length }
+                                Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
+                                $removed++
+                                $sizeRemoved += $itemSize
+                            } catch {
+                                $skipped++
+                            }
+                        }
+                        $sizeMB = [math]::Round($sizeRemoved / 1MB, 1)
+                        if ($removed -eq 0) {
+                            Partial-ActionResult -result $result -message "Could not remove any cache files." -details "Skipped $skipped locked files in $doPath."
+                        } elseif ($skipped -gt 0) {
+                            Partial-ActionResult -result $result -message "Removed $removed items ($sizeMB MB). Skipped $skipped locked files." -details "Cleaned $doPath."
+                        } else {
+                            Complete-ActionResult -result $result -message "Removed $removed items ($sizeMB MB)." -details "Cleaned $doPath completely."
+                        }
+                    }
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to clean Delivery Optimization cache." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildCleanupUpgradeTempBlock() {
+        return """
+            $actionId = "cleanup_upgrade_temp"
+            $result = New-ActionResult -id $actionId -title "Remove Windows Upgrade Temporary Files" -category "Windows Cleanup" -riskLevel "Safe"
+            try {
+                # Check if Windows setup/update appears to be running
+                $setupRunning = Get-Process -Name "SetupHost","SetupPrep","Windows10UpgraderApp" -ErrorAction SilentlyContinue
+                if ($setupRunning) {
+                    Skip-ActionResult -result $result -message "Windows setup appears to be running." -details "Active setup processes detected: $(($setupRunning | Select-Object -ExpandProperty Name) -join ', '). Skipping to avoid interfering with an active upgrade."
+                } else {
+                    $drive = $env:SystemDrive
+                    $paths = @("$drive\\\u0024Windows.~BT", "$drive\\\u0024Windows.~WS")
+                    $totalRemoved = 0
+                    $totalSize = 0
+                    $details = @()
+                    $anyFound = $false
+
+                    foreach ($path in $paths) {
+                        if (Test-Path $path) {
+                            $anyFound = $true
+                            try {
+                                $folderSize = (Get-ChildItem -Path $path -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+                                if ($null -eq $folderSize) { $folderSize = 0 }
+                                Remove-Item -Path $path -Recurse -Force -ErrorAction Stop
+                                $sizeMB = [math]::Round($folderSize / 1MB, 1)
+                                $totalRemoved++
+                                $totalSize += $folderSize
+                                $details += "Removed $path ($sizeMB MB)"
+                            } catch {
+                                $details += "Failed to remove ${path}: $($_.Exception.Message)"
+                            }
+                        }
+                    }
+
+                    if (-not $anyFound) {
+                        AlreadyApplied-ActionResult -result $result -message "No upgrade temp folders found." -details "Neither `$Windows.~BT nor `$Windows.~WS exist on $drive."
+                    } elseif ($totalRemoved -eq 0) {
+                        Partial-ActionResult -result $result -message "Found upgrade folders but could not remove them." -details ($details -join " | ")
+                    } else {
+                        $totalMB = [math]::Round($totalSize / 1MB, 1)
+                        Complete-ActionResult -result $result -message "Removed $totalRemoved upgrade temp folder(s) ($totalMB MB)." -details ($details -join " | ")
+                    }
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to clean upgrade temp files." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildCleanupSetupLogsBlock() {
+        return """
+            $actionId = "cleanup_setup_logs"
+            $result = New-ActionResult -id $actionId -title "Remove Setup Logs Older Than 30 Days" -category "Windows Cleanup" -riskLevel "Safe"
+            try {
+                $logPaths = @(
+                    "$env:SystemRoot\\Logs\\CBS",
+                    "$env:SystemRoot\\Logs\\DISM",
+                    "$env:SystemRoot\\Logs\\WindowsUpdate"
+                )
+                $cutoffDate = (Get-Date).AddDays(-30)
+                $totalRemoved = 0
+                $totalSkipped = 0
+                $totalSize = 0
+
+                foreach ($logPath in $logPaths) {
+                    if (Test-Path $logPath) {
+                        $oldFiles = Get-ChildItem -Path $logPath -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt $cutoffDate }
+                        foreach ($file in $oldFiles) {
+                            try {
+                                $totalSize += $file.Length
+                                Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+                                $totalRemoved++
+                            } catch {
+                                $totalSkipped++
+                            }
+                        }
+                    }
+                }
+
+                $sizeMB = [math]::Round($totalSize / 1MB, 1)
+                if ($totalRemoved -eq 0 -and $totalSkipped -eq 0) {
+                    Skip-ActionResult -result $result -message "No setup logs older than 30 days found." -details "Checked CBS, DISM, and WindowsUpdate log folders."
+                } elseif ($totalRemoved -eq 0 -and $totalSkipped -gt 0) {
+                    Partial-ActionResult -result $result -message "Found old logs but could not remove them." -details "Skipped $totalSkipped locked log files."
+                } elseif ($totalSkipped -gt 0) {
+                    Partial-ActionResult -result $result -message "Removed $totalRemoved log files ($sizeMB MB). Skipped $totalSkipped." -details "Cleaned logs older than 30 days from CBS, DISM, WindowsUpdate."
+                } else {
+                    Complete-ActionResult -result $result -message "Removed $totalRemoved log files ($sizeMB MB)." -details "Cleaned logs older than 30 days from CBS, DISM, WindowsUpdate."
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to clean setup logs." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildDismStartComponentCleanupBlock() {
+        return """
+            $actionId = "cleanup_dism_startcomponentcleanup"
+            $result = New-ActionResult -id $actionId -title "Run DISM StartComponentCleanup" -category "Windows Cleanup" -riskLevel "Moderate"
+            $result.restartRecommended = $true
+            try {
+                $dismOutput = & DISM.exe /Online /Cleanup-Image /StartComponentCleanup 2>&1
+                $exitCode = $LASTEXITCODE
+                $outputText = ($dismOutput | Out-String).Trim()
+                if ($exitCode -eq 0) {
+                    Complete-ActionResult -result $result -message "DISM StartComponentCleanup completed successfully." -details $outputText
+                } else {
+                    Fail-ActionResult -result $result -message "DISM exited with code $exitCode." -error $outputText
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to run DISM StartComponentCleanup." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildDismResetBaseBlock() {
+        return """
+            $actionId = "cleanup_dism_resetbase"
+            $result = New-ActionResult -id $actionId -title "Run DISM StartComponentCleanup with ResetBase" -category "Windows Cleanup" -riskLevel "Aggressive"
+            $result.restartRecommended = $true
+            try {
+                $dismOutput = & DISM.exe /Online /Cleanup-Image /StartComponentCleanup /ResetBase 2>&1
+                $exitCode = $LASTEXITCODE
+                $outputText = ($dismOutput | Out-String).Trim()
+                if ($exitCode -eq 0) {
+                    Complete-ActionResult -result $result -message "DISM ResetBase completed successfully. Installed updates may no longer be uninstallable." -details $outputText
+                } else {
+                    Fail-ActionResult -result $result -message "DISM exited with code $exitCode." -error $outputText
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to run DISM ResetBase." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildEmptyRecycleBinBlock() {
+        return """
+            $actionId = "cleanup_empty_recycle_bin"
+            $result = New-ActionResult -id $actionId -title "Empty Recycle Bin" -category "Windows Cleanup" -riskLevel "Aggressive"
+            try {
+                $shell = New-Object -ComObject Shell.Application
+                $recycleBin = $shell.Namespace(0x0A)
+                $itemCount = $recycleBin.Items().Count
+                if ($itemCount -eq 0) {
+                    Skip-ActionResult -result $result -message "Recycle Bin is already empty." -details "No items found in the Recycle Bin."
+                } else {
+                    Clear-RecycleBin -Force -ErrorAction Stop
+                    Complete-ActionResult -result $result -message "Recycle Bin emptied." -details "Removed $itemCount item(s) from the Recycle Bin."
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to empty Recycle Bin." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildCleanupPreviousWindowsBlock() {
+        return """
+            $actionId = "cleanup_previous_windows"
+            $result = New-ActionResult -id $actionId -title "Remove Previous Windows Installation Files" -category "Windows Cleanup" -riskLevel "Aggressive"
+            try {
+                $windowsOld = "$env:SystemDrive\\Windows.old"
+                if (!(Test-Path $windowsOld)) {
+                    Skip-ActionResult -result $result -message "No previous Windows installation found." -details "C:\\Windows.old does not exist on this system."
+                } else {
+                    # Use Windows built-in Disk Cleanup (cleanmgr) with the Previous Installations flag.
+                    # StateFlags 5000 is a custom flag index we set to mark "Previous Windows installation(s)" for cleanup.
+                    $regPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VolumeCaches\\Previous Installations"
+                    if (Test-Path $regPath) {
+                        Set-ItemProperty -Path $regPath -Name "StateFlags0065" -Value 2 -Type DWord -ErrorAction SilentlyContinue
+                    }
+
+                    $cleanmgrProcess = Start-Process -FilePath "cleanmgr.exe" -ArgumentList "/sagerun:65" -Wait -PassThru -NoNewWindow -ErrorAction Stop
+                    $exitCode = $cleanmgrProcess.ExitCode
+
+                    # Clean up the StateFlags registry value
+                    if (Test-Path $regPath) {
+                        Remove-ItemProperty -Path $regPath -Name "StateFlags0065" -ErrorAction SilentlyContinue
+                    }
+
+                    if (!(Test-Path $windowsOld)) {
+                        Complete-ActionResult -result $result -message "Previous Windows installation files removed." -details "Windows.old has been cleaned up via Disk Cleanup (cleanmgr sagerun). Rollback to previous Windows version is no longer possible."
+                    } else {
+                        # Check if folder size decreased significantly
+                        $remainingItems = (Get-ChildItem -Path $windowsOld -Recurse -Force -ErrorAction SilentlyContinue).Count
+                        if ($remainingItems -eq 0) {
+                            Complete-ActionResult -result $result -message "Previous Windows installation files removed." -details "Windows.old folder is now empty."
+                        } else {
+                            Partial-ActionResult -result $result -message "Disk Cleanup ran but Windows.old still has $remainingItems items." -details "cleanmgr exited with code $exitCode. Some files may require a reboot to fully remove, or may be protected."
+                        }
+                    }
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to remove previous Windows installation files." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildCleanupCrashDumpsBlock() {
+        return """
+            $actionId = "cleanup_crash_dumps"
+            $result = New-ActionResult -id $actionId -title "Clear Old Crash Dump Files" -category "Windows Cleanup" -riskLevel "Moderate"
+            try {
+                $dumpPaths = @(
+                    "$env:SystemRoot\\Minidump",
+                    "$env:SystemRoot\\MEMORY.DMP"
+                )
+                $totalRemoved = 0
+                $totalSize = 0
+                $details = @()
+
+                # Minidump folder
+                $minidumpPath = "$env:SystemRoot\\Minidump"
+                if (Test-Path $minidumpPath) {
+                    $dumpFiles = Get-ChildItem -Path $minidumpPath -File -Force -ErrorAction SilentlyContinue
+                    foreach ($file in $dumpFiles) {
+                        try {
+                            $totalSize += $file.Length
+                            Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+                            $totalRemoved++
+                        } catch {
+                            $details += "Skipped (in use): $($file.Name)"
+                        }
+                    }
+                }
+
+                # Main memory dump
+                $memoryDmp = "$env:SystemRoot\\MEMORY.DMP"
+                if (Test-Path $memoryDmp) {
+                    try {
+                        $fileSize = (Get-Item $memoryDmp -Force).Length
+                        Remove-Item -Path $memoryDmp -Force -ErrorAction Stop
+                        $totalSize += $fileSize
+                        $totalRemoved++
+                    } catch {
+                        $details += "Skipped MEMORY.DMP (in use or locked)"
+                    }
+                }
+
+                $sizeMB = [math]::Round($totalSize / 1MB, 1)
+                if ($totalRemoved -eq 0 -and $details.Count -eq 0) {
+                    Skip-ActionResult -result $result -message "No crash dump files found." -details "No minidump files or MEMORY.DMP found."
+                } elseif ($totalRemoved -eq 0) {
+                    Partial-ActionResult -result $result -message "Found dump files but could not remove them." -details ($details -join " | ")
+                } elseif ($details.Count -gt 0) {
+                    Partial-ActionResult -result $result -message "Removed $totalRemoved dump file(s) ($sizeMB MB). Some skipped." -details ($details -join " | ")
+                } else {
+                    Complete-ActionResult -result $result -message "Removed $totalRemoved crash dump file(s) ($sizeMB MB)." -details "Cleaned minidump files and MEMORY.DMP."
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to clean crash dump files." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildCleanupThumbnailCacheBlock() {
+        return """
+            $actionId = "cleanup_thumbnail_cache"
+            $result = New-ActionResult -id $actionId -title "Clear Thumbnail Cache" -category "Windows Cleanup" -riskLevel "Safe"
+            try {
+                $thumbCachePath = "$env:LOCALAPPDATA\\Microsoft\\Windows\\Explorer"
+                if (!(Test-Path $thumbCachePath)) {
+                    Skip-ActionResult -result $result -message "Thumbnail cache folder not found." -details "Path does not exist: $thumbCachePath"
+                } else {
+                    $thumbFiles = Get-ChildItem -Path $thumbCachePath -Filter "thumbcache_*.db" -Force -ErrorAction SilentlyContinue
+                    if ($thumbFiles.Count -eq 0) {
+                        AlreadyApplied-ActionResult -result $result -message "No thumbnail cache files found." -details "No thumbcache_*.db files in $thumbCachePath."
+                    } else {
+                        $removed = 0
+                        $skipped = 0
+                        $sizeRemoved = 0
+                        foreach ($file in $thumbFiles) {
+                            try {
+                                $sizeRemoved += $file.Length
+                                Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+                                $removed++
+                            } catch {
+                                $skipped++
+                            }
+                        }
+                        $sizeMB = [math]::Round($sizeRemoved / 1MB, 1)
+                        if ($removed -eq 0) {
+                            Partial-ActionResult -result $result -message "Could not remove thumbnail cache (files in use)." -details "Skipped $skipped locked files. Thumbnails may be in use by Explorer."
+                        } elseif ($skipped -gt 0) {
+                            Partial-ActionResult -result $result -message "Removed $removed thumbnail cache files ($sizeMB MB). Skipped $skipped." -details "Thumbnails will be regenerated by Windows as needed."
+                        } else {
+                            Complete-ActionResult -result $result -message "Removed $removed thumbnail cache files ($sizeMB MB)." -details "Thumbnails will be regenerated by Windows as needed."
+                        }
+                    }
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to clear thumbnail cache." -error $_.Exception.Message
+            }
+            """;
+    }
+
+    private String buildCleanupShaderCacheBlock() {
+        return """
+            $actionId = "cleanup_shader_cache"
+            $result = New-ActionResult -id $actionId -title "Clear DirectX Shader Cache" -category "Windows Cleanup" -riskLevel "Safe"
+            try {
+                $shaderCachePaths = @(
+                    "$env:LOCALAPPDATA\\D3DSCache",
+                    "$env:LOCALAPPDATA\\NVIDIA\\DXCache",
+                    "$env:LOCALAPPDATA\\NVIDIA\\GLCache",
+                    "$env:LOCALAPPDATA\\AMD\\DxCache",
+                    "$env:LOCALAPPDATA\\AMD\\GLCache"
+                )
+                $totalRemoved = 0
+                $totalSkipped = 0
+                $totalSize = 0
+                $pathsCleaned = @()
+
+                foreach ($cachePath in $shaderCachePaths) {
+                    if (Test-Path $cachePath) {
+                        $items = Get-ChildItem -Path $cachePath -Recurse -Force -ErrorAction SilentlyContinue
+                        foreach ($item in $items) {
+                            try {
+                                $itemSize = 0
+                                if (!$item.PSIsContainer) { $itemSize = $item.Length }
+                                Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction Stop
+                                $totalRemoved++
+                                $totalSize += $itemSize
+                            } catch {
+                                $totalSkipped++
+                            }
+                        }
+                        $pathsCleaned += $cachePath
+                    }
+                }
+
+                $sizeMB = [math]::Round($totalSize / 1MB, 1)
+                if ($pathsCleaned.Count -eq 0) {
+                    Skip-ActionResult -result $result -message "No shader cache folders found." -details "No DirectX/GPU shader cache directories exist."
+                } elseif ($totalRemoved -eq 0 -and $totalSkipped -eq 0) {
+                    AlreadyApplied-ActionResult -result $result -message "Shader cache folders are already empty." -details "Checked: $($pathsCleaned -join ', ')"
+                } elseif ($totalRemoved -eq 0) {
+                    Partial-ActionResult -result $result -message "Could not remove shader cache files." -details "Skipped $totalSkipped locked files."
+                } elseif ($totalSkipped -gt 0) {
+                    Partial-ActionResult -result $result -message "Removed $totalRemoved items ($sizeMB MB). Skipped $totalSkipped." -details "Shaders will be regenerated by applications as needed."
+                } else {
+                    Complete-ActionResult -result $result -message "Removed $totalRemoved shader cache items ($sizeMB MB)." -details "Shaders will be regenerated by applications as needed."
+                }
+            } catch {
+                Fail-ActionResult -result $result -message "Failed to clear shader cache." -error $_.Exception.Message
+            }
+            """;
     }
 }

@@ -8,6 +8,11 @@ out/
 
 ### Maven ###
 /target/
+dependency-reduced-pom.xml
+
+### Build output ###
+/release/
+/.wix/
 
 ### Eclipse ###
 .apt_generated

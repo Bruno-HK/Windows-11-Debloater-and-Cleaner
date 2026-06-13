@@ -23,9 +23,13 @@ This application wraps the `win11_debloat.ps1` script into a desktop tool that l
 
 ## Requirements
 
-- **Java 21** (JDK 21+)
+### For development
+- **Java 21+** (JDK)
 - **Maven 3.8+**
 - **Windows 11** (the debloat operations target Windows 11)
+
+### For the portable build (no Java needed on target machine)
+- Just copy the `Win11Debloater` folder and run `Win11Debloater.exe`
 
 ## How to Build
 
@@ -33,9 +37,30 @@ This application wraps the `win11_debloat.ps1` script into a desktop tool that l
 mvn clean package
 ```
 
-This compiles the project and produces a JAR in `target/`.
+This compiles the project and produces a shaded (fat) JAR in `target/`.
+
+### Portable Build (Bundled JRE)
+
+To build a self-contained portable app that includes its own JRE (no Java installation required on the target machine):
+
+```bash
+build-portable.bat
+```
+
+This runs Maven and then `jpackage` to produce a standalone app image at:
+
+```
+release/app-image/Win11Debloater/
+├── Win11Debloater.exe
+├── app/          (JAR + config)
+└── runtime/      (bundled JRE)
+```
+
+Copy the entire `Win11Debloater` folder to any Windows machine and run the `.exe` directly.
 
 ## How to Run
+
+### From source (development)
 
 The application uses JavaFX, so run it via the Maven JavaFX plugin:
 
@@ -43,11 +68,15 @@ The application uses JavaFX, so run it via the Maven JavaFX plugin:
 mvn javafx:run
 ```
 
-Or run the JAR directly (ensure JavaFX modules are on the module path):
+Or run the shaded JAR directly:
 
 ```bash
-java --module-path <path-to-javafx-sdk>/lib --add-modules javafx.controls,javafx.web -jar target/win11-debloater-1.0.0.jar
+java -jar target/win11-debloater-1.0.0.jar
 ```
+
+### Portable (no Java required)
+
+Double-click `Win11Debloater.exe` in the portable app folder, or run it from the command line.
 
 ### Running as Administrator
 
@@ -55,7 +84,7 @@ For the application to actually execute debloat actions, it **must** run as Admi
 
 1. Open **Terminal** or **Command Prompt** as Administrator.
 2. Navigate to the project directory.
-3. Run: `mvn javafx:run`
+3. Run: `mvn javafx:run` (dev) or launch `Win11Debloater.exe` (portable).
 
 Alternatively, the app has a **Restart as Admin** button that attempts UAC elevation.
 
@@ -133,6 +162,7 @@ JavaFX Shell (MainApp)
 src/main/java/
   module-info.java
   debloater/
+    Launcher.java                   — Non-JavaFX entry point for fat JAR / jpackage
     MainApp.java                    — JavaFX application entry point
     bridge/
       AppBridge.java                — Java-to-JavaScript bridge (narrow API)
@@ -156,6 +186,47 @@ src/main/resources/web/
   app.js                            — UI logic (renders from Java data, sends IDs only)
 ```
 
+## Windows Cleanup
+
+The **Windows Cleanup** module is designed for users who upgraded from Windows 10 to Windows 11 and want to remove old upgrade leftovers and reduce residual files as much as safely possible.
+
+### What It Does
+
+- Clears Windows and user temp files (skipping locked files)
+- Removes Windows Update download cache (safely stops/restarts services)
+- Removes Delivery Optimization cache
+- Removes Windows upgrade temporary folders (`$Windows.~BT`, `$Windows.~WS`)
+- Removes old setup logs (older than 30 days only)
+- Runs DISM component cleanup and ResetBase (optional, off by default)
+- Empties the Recycle Bin (optional, off by default)
+- Removes previous Windows installation files via Disk Cleanup (optional, off by default)
+- Clears crash dumps, thumbnail cache, and DirectX shader cache (optional)
+
+### What It Does NOT Do
+
+- **This does not make an upgraded system identical to a true fresh install.** A real clean install is fundamentally different. This module gets the system closer by removing residual files, but registry entries, driver remnants, and other artifacts from the upgrade process may remain.
+- Does **not** delete any user files (Downloads, Documents, Desktop, Pictures, Videos, Music, browser profiles, game saves, or user profile data).
+- Does **not** modify Windows configuration or registry settings (unlike the debloat actions).
+
+### Warnings
+
+- **Previous Windows installation removal**: After removing `Windows.old`, you can no longer roll back to the previous Windows version. This action is Aggressive and OFF by default.
+- **DISM ResetBase**: After running `/ResetBase`, installed Windows updates may no longer be uninstallable. This action is Aggressive and OFF by default.
+- **A true fresh install is still different**: Even after running all Windows Cleanup actions, the system will not be identical to a fresh Windows 11 installation. If a clean state is critical, perform a fresh install instead.
+
+### How to Use
+
+1. Select the **Windows Cleanup** category in the left sidebar.
+2. Safe cleanup actions are recommended ON by default.
+3. Review and enable any optional/aggressive actions as needed.
+4. **Create System Restore Point** (in the Safety category) is ON by default and strongly recommended before running any cleanup actions.
+5. Click **Preview PS** to review the generated PowerShell before executing.
+6. Click **Run Selected** (requires Administrator).
+
+### Restore Point Handling
+
+The "Create System Restore Point" action is defined in the **Safety** category and is selected by default. When running Windows Cleanup actions, it is strongly recommended to keep this action enabled. If System Protection is disabled on the C: drive, the restore point creation will fail and report a clear error — it will not continue silently.
+
 ## Known Limitations
 
 - The app generates and runs PowerShell scripts. It cannot undo changes after execution (use the restore point).
@@ -164,3 +235,4 @@ src/main/resources/web/
 - The app requires JavaFX WebView, which includes a Chromium-based engine — this increases the JAR/runtime size.
 - Profiles are simple JSON arrays of action IDs. They do not store toggle order or custom metadata.
 - The application must be run on Windows 11 for the debloat operations to work.
+- The portable build (`build-portable.bat`) has hardcoded paths to a local JDK and IntelliJ's bundled Maven. Edit the paths at the top of the script if your setup differs.
