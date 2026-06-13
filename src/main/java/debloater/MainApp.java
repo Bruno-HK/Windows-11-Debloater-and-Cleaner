@@ -44,7 +44,7 @@ public class MainApp extends Application {
 
         // Block external navigation — only allow local resource URLs
         webEngine.locationProperty().addListener((obs, oldUrl, newUrl) -> {
-            if (newUrl != null && !newUrl.startsWith("file:") && !newUrl.startsWith("about:") && !newUrl.isEmpty()) {
+            if (newUrl != null && !newUrl.startsWith("file:") && !newUrl.startsWith("jar:") && !newUrl.startsWith("about:") && !newUrl.isEmpty()) {
                 System.err.println("MainApp: Blocked external navigation to: " + newUrl);
                 // Navigate back to the local page
                 webEngine.loadContent("<html><body style='background:#1a1a2e;color:#fff;font-family:sans-serif;padding:40px;'>"
