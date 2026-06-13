@@ -246,3 +246,9 @@ The "Create System Restore Point" action is defined in the **Safety** category a
 - Profiles are simple JSON arrays of action IDs. They do not store toggle order or custom metadata.
 - The application must be run on Windows 11 for the debloat operations to work.
 - The portable build (`build-portable.bat`) has hardcoded paths to a local JDK and IntelliJ's bundled Maven. Edit the paths at the top of the script if your setup differs.
+
+## Support
+
+If this saved you time, stress, or one Windows reinstall, feel free to fund one of the medically questionable amounts of coffee I drink per day.
+
+[Buy me a coffee on Ko-fi](https://ko-fi.com/hytsu)
