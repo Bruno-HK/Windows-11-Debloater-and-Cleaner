@@ -2,6 +2,16 @@
 
 A safe, selective Windows 11 debloat launcher with a modern JavaFX WebView UI.
 
+This project came from a simple problem: I do not like running random debloat scripts from the internet on my own PC without knowing exactly what they are doing.
+
+So I made my own.
+
+It lets you choose what gets removed, disabled, or left alone. Nothing runs blindly. Every action is visible, selectable, and reported back after execution.
+
+Built with JavaFX, PowerShell, and the massive help of my buddy Claude.
+
+The project is completely open source. Feel free to use it, inspect it, break it, improve it, or tell me where I did something stupid.
+
 ## GitHub Description
 
 Selective Windows 11 debloater with a JavaFX + WebView UI, PowerShell preview, profile import/export, live logs, and structured execution reports.
